@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ScrollingScript</title>
+  <title>Script Player - Auto Scroll</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
   <style>
     body {
@@ -20,14 +20,6 @@
       display: flex;
       flex-direction: column;
       gap: 10px;
-    }
-    .sidebar textarea {
-      height: 150px;
-      width: 100%;
-      resize: none;
-    }
-    .slider-container {
-      margin-top: 10px;
     }
     .slider-container input[type=range] {
       width: 100%;
@@ -62,21 +54,18 @@
       font-size: 24px;
       margin: 14px 0;
       white-space: pre-wrap;
+      opacity: 0;
+      transform: translateY(50px);
     }
   </style>
 </head>
 <body>
   <div class="sidebar">
-    <h3>Script</h3>
-    <textarea id="scriptInput" placeholder="Script here"></textarea>
+    <h3>Script File</h3>
+    <input type="file" id="scriptInput" accept=".txt">
     
     <h3>Audio</h3>
     <input type="file" id="audioInput" accept="audio/*">
-    
-    <div class="slider-container">
-      <label for="speedInput">Speed (s): <span id="speedValue">1.5</span></label>
-      <input type="range" id="speedInput" min="0.5" max="5.5" step="1.0" value="1.5">
-    </div>
     
     <div class="button-group">
       <button onclick="togglePlayPause()" id="playPauseBtn">Play</button>
@@ -86,153 +75,117 @@
   <div class="content-wrapper">
     <div class="content" id="content"></div>
   </div>
+  
   <script>
     let audio;
-    let animationDuration = 1;
-    let wordGroups = [];
-    let currentGroupIndex = 0;
+    let scriptData = [];
     let isPlaying = false;
     let tweenRefs = [];
-    let isResuming = false;
-
     const contentDiv = document.getElementById('content');
-    const speedInput = document.getElementById('speedInput');
-    const speedValue = document.getElementById('speedValue');
     const playPauseBtn = document.getElementById('playPauseBtn');
 
-    speedInput.addEventListener('input', function() {
-      animationDuration = parseFloat(this.value);
-      speedValue.textContent = this.value;
+    document.getElementById('scriptInput').addEventListener('change', function(event) {
+      const file = event.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          scriptData = parseScript(e.target.result);
+        };
+        reader.readAsText(file);
+      }
     });
 
-    function splitTextIntoGroups(text) {
-      const words = text.split(/\s+/).filter(word => word.trim() !== '');
-      let groups = [];
-      let group = [];
+    function parseScript(text) {
+      let lines = text.split('\n');
+      let parsed = [];
+      const regex = /\[(\d+\.\d+)s\s*-\s*(\d+\.\d+)s\]\s*(.+)/;
 
-      words.forEach(word => {
-        group.push(word);
-        if (word.includes('.') || word.includes('\n') || word.includes('?') || group.length >= 10) {
-          groups.push(group.join(' '));
-          group = [];
+      lines.forEach(line => {
+        let match = line.match(regex);
+        if (match) {
+          let start = parseFloat(match[1]);
+          let end = parseFloat(match[2]);
+          let content = match[3].trim();
+          parsed.push({ start, end, content, shown: false });
         }
       });
 
-      if (group.length > 0) groups.push(group.join(' '));
-
-      return groups;
+      return parsed;
     }
 
     function startPresentation() {
+      if (!audio) return;
+      contentDiv.innerHTML = '';
       tweenRefs.forEach(tween => tween.kill());
       tweenRefs = [];
-      contentDiv.innerHTML = '';
-      contentDiv.style.marginTop = '0px';
-
-      let text = document.getElementById('scriptInput').value;
-      wordGroups = splitTextIntoGroups(text);
-      currentGroupIndex = 0;
-
-      let file = document.getElementById('audioInput').files[0];
-      if (file) {
-        if (audio) audio.pause();
-        audio = new Audio(URL.createObjectURL(file));
-        audio.play();
-      }
-
-      if (wordGroups.length === 0) return;
-
-      const initialGroups = Math.min(2, wordGroups.length);
-      for (let i = 0; i < initialGroups; i++) {
-        addWordGroup();
-      }
-
+      scriptData.forEach(item => item.shown = false);
+      audio.play();
       isPlaying = true;
       playPauseBtn.textContent = "Pause";
-      showNextWordGroup();
+      requestAnimationFrame(updateScriptDisplay);
     }
 
-    function addWordGroup() {
-      let p = document.createElement('p');
-      p.className = 'script-line';
-      p.textContent = wordGroups[currentGroupIndex];
-      contentDiv.appendChild(p);
-      currentGroupIndex++;
-    }
+    function updateScriptDisplay() {
+      if (!isPlaying || !audio) return;
+      let currentTime = audio.currentTime;
 
-    function showNextWordGroup() {
-      if (!isPlaying || currentGroupIndex >= wordGroups.length) return;
+      scriptData.forEach((item, index) => {
+        if (!item.shown && currentTime >= item.start) {
+          let p = document.createElement('p');
+          p.className = 'script-line';
+          p.textContent = item.content;
+          contentDiv.appendChild(p);
 
-      let p = document.createElement('p');
-      p.className = 'script-line';
-      p.textContent = wordGroups[currentGroupIndex];
-      p.style.opacity = 0;
-      p.style.transform = 'translateY(50px)';
-      contentDiv.appendChild(p);
-
-      let tweenFade = gsap.to(p, {
-        opacity: 1,
-        y: 0,
-        duration: animationDuration,
-        ease: "power2.out",
-        onComplete: function() {
-          let pHeight = p.offsetHeight + 14;
-          let currentMarginTop = parseFloat(contentDiv.style.marginTop) || 0;
-          let newMarginTop = currentMarginTop - pHeight;
-
-          let tweenScroll = gsap.to(contentDiv, {
-            marginTop: newMarginTop + 'px',
-            duration: animationDuration,
+          let tweenFade = gsap.to(p, {
+            opacity: 1,
+            y: 0,
+            duration: 0.5,
             ease: "power2.out",
             onComplete: function() {
-              currentGroupIndex++;
-              if (currentGroupIndex < wordGroups.length) {
-                showNextWordGroup();
-              }
+              let pHeight = p.offsetHeight + 14;
+              let currentMarginTop = parseFloat(contentDiv.style.marginTop) || 0;
+              let newMarginTop = currentMarginTop - pHeight;
+
+              let tweenScroll = gsap.to(contentDiv, {
+                marginTop: newMarginTop + 'px',
+                duration: 0.5,
+                ease: "power2.out"
+              });
+
+              tweenRefs.push(tweenScroll);
             }
           });
 
-          tweenRefs.push(tweenScroll);
+          tweenRefs.push(tweenFade);
+          scriptData[index].shown = true;
         }
       });
 
-      tweenRefs.push(tweenFade);
+      requestAnimationFrame(updateScriptDisplay);
     }
 
     function togglePlayPause() {
       if (!isPlaying) {
-        if (currentGroupIndex === 0) {
-          startPresentation();
+        if (!audio) {
+          let file = document.getElementById('audioInput').files[0];
+          if (file) {
+            audio = new Audio(URL.createObjectURL(file));
+            audio.onended = () => {
+              isPlaying = false;
+              playPauseBtn.textContent = "Play";
+            };
+            startPresentation();
+          }
         } else {
-          resumePresentation();
+          audio.play();
+          isPlaying = true;
+          playPauseBtn.textContent = "Pause";
+          requestAnimationFrame(updateScriptDisplay);
         }
       } else {
-        pausePresentation();
-      }
-    }
-
-    function pausePresentation() {
-      isPlaying = false;
-      playPauseBtn.textContent = "Play";
-      if (audio && !audio.paused) {
         audio.pause();
-      }
-      tweenRefs.forEach(tween => tween.pause());
-      gsap.globalTimeline.pause();
-    }
-
-    function resumePresentation() {
-      isPlaying = true;
-      playPauseBtn.textContent = "Pause";
-      if (audio && audio.paused) {
-        audio.play();
-      }
-      tweenRefs.forEach(tween => tween.resume());
-      gsap.globalTimeline.resume();
-
-      if (currentGroupIndex < wordGroups.length) {
-        currentGroupIndex++;
-        showNextWordGroup();
+        isPlaying = false;
+        playPauseBtn.textContent = "Play";
       }
     }
   </script>
