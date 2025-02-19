@@ -21,11 +21,9 @@
       flex-direction: column;
       gap: 10px;
     }
-    .slider-container input[type=range] {
-      width: 100%;
-    }
-    .button-group {
+    .button-group, .slider-container {
       display: flex;
+      flex-direction: column;
       gap: 10px;
     }
     button {
@@ -57,6 +55,10 @@
       opacity: 0;
       transform: translateY(50px);
     }
+    .seekbar {
+      width: 100%;
+      margin-top: 10px;
+    }
   </style>
 </head>
 <body>
@@ -67,6 +69,11 @@
     <h3>Audio</h3>
     <input type="file" id="audioInput" accept="audio/*">
     
+    <div class="slider-container">
+      <label for="seekbar">Seek</label>
+      <input type="range" id="seekbar" class="seekbar" min="0" max="100" step="0.1" value="0">
+    </div>
+
     <div class="button-group">
       <button onclick="togglePlayPause()" id="playPauseBtn">Play</button>
     </div>
@@ -83,6 +90,7 @@
     let tweenRefs = [];
     const contentDiv = document.getElementById('content');
     const playPauseBtn = document.getElementById('playPauseBtn');
+    const seekbar = document.getElementById('seekbar');
 
     document.getElementById('scriptInput').addEventListener('change', function(event) {
       const file = event.target.files[0];
@@ -128,6 +136,7 @@
     function updateScriptDisplay() {
       if (!isPlaying || !audio) return;
       let currentTime = audio.currentTime;
+      seekbar.value = (currentTime / audio.duration) * 100;
 
       scriptData.forEach((item, index) => {
         if (!item.shown && currentTime >= item.start) {
@@ -186,6 +195,36 @@
         audio.pause();
         isPlaying = false;
         playPauseBtn.textContent = "Play";
+      }
+    }
+
+    seekbar.addEventListener('input', function() {
+      if (audio) {
+        let newTime = (seekbar.value / 100) * audio.duration;
+        audio.currentTime = newTime;
+        updateScriptManually(newTime);
+      }
+    });
+
+    function updateScriptManually(newTime) {
+      contentDiv.innerHTML = '';
+      scriptData.forEach(item => {
+        item.shown = false;
+        if (newTime >= item.start) {
+          let p = document.createElement('p');
+          p.className = 'script-line';
+          p.textContent = item.content;
+          p.style.opacity = 1;
+          p.style.transform = 'translateY(0px)';
+          contentDiv.appendChild(p);
+          item.shown = true;
+        }
+      });
+
+      let lastItem = scriptData.findLast(item => item.start <= newTime);
+      if (lastItem) {
+        let lastHeight = contentDiv.lastChild?.offsetHeight || 0;
+        contentDiv.style.marginTop = `-${lastHeight * scriptData.indexOf(lastItem)}px`;
       }
     }
   </script>
